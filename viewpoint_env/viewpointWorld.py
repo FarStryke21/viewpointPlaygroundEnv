@@ -6,7 +6,8 @@ from scipy.spatial.transform import Rotation
 import matplotlib.pyplot as plt
 
 class CoverageEnv(gym.Env):
-    def __init__(self, mesh_file, sensor_range=0.1, fov_deg=60, width_px=320, height_px=240, coverage_req=0.99):
+    def __init__(self, mesh_file='/home/aman/Desktop/RL_CoveragePlanning/viewpointPlaygroundEnv/meshes/stanford_bunny.obj',
+                  sensor_range=0.1, fov_deg=60, width_px=320, height_px=240, coverage_req=0.99):
         super(CoverageEnv, self).__init__()
 
         self.mesh = o3d.io.read_triangle_mesh(mesh_file)
@@ -46,6 +47,11 @@ class CoverageEnv(gym.Env):
         super().reset(seed=seed)
         self.agent_pose = self.action_space.sample()
         self.observation_history = np.zeros((self.num_triangles), dtype=np.float32)
+        self.percentage_covered = 0.0
+        self.tracker = None
+        self.action_history = []
+
+        return self.observation_history, {}
 
     def step(self, action):
 
@@ -58,11 +64,12 @@ class CoverageEnv(gym.Env):
         # Calculate the percentage of the mesh covered by the percent of non zero elements in the observation space
         self.percentage_covered = np.count_nonzero(self.observation_history) / self.observation_history.shape[0]
         reward = self.get_reward()
-        done = self.percentage_covered >= self.done_val
+        terminated = self.percentage_covered >= self.done_val
+        truncated = False
         # Step returns observation of state, reward, done, and info in a tuple
         print(f"Reward: {reward}")
         print(f"Covered in current step: {np.count_nonzero(self.observation_space) / self.observation_space.shape[0]}%")
-        return self.observation_space, reward, done, {}
+        return self.observation_space, reward, terminated, truncated, {}
 
     def get_observation(self, pose):
         rays = self.scene.create_rays_pinhole(fov_deg=self.fov_deg,
