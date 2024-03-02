@@ -1,169 +1,99 @@
 import gymnasium as gym
 import numpy as np
-import trimesh
+import open3d as o3d
 from gymnasium import spaces
 from scipy.spatial.transform import Rotation
 import matplotlib.pyplot as plt
 
 class CoverageEnv(gym.Env):
-    def __init__(self, mesh_file, sensor_range, sensor_resolution):
+    def __init__(self, mesh_file, sensor_range=0.1, fov_deg=60, width_px=320, height_px=240, coverage_req=0.99):
         super(CoverageEnv, self).__init__()
 
-        self.mesh = trimesh.load(mesh_file)
+        self.mesh = o3d.io.read_triangle_mesh(mesh_file)
+        self.mesh = o3d.t.geometry.TriangleMesh.from_legacy(self.mesh)
+        self.scene = o3d.t.geometry.RaycastingScene()
+        self.scene.add_triangles(self.mesh)
+
+        self.fov_deg = fov_deg
+        self.width_px = width_px
+        self.height_px = height_px
+        self.up = [0, -1, 0]
+        self.center = [0, 0, 0]
+
+        self.agent_pose = np.array([0.0, 0.0, 0.0])  # [x, y, z]
+        self.done_val = coverage_req
+
         self.sensor_range = sensor_range
-        self.sensor_resolution = sensor_resolution
-        self.agent_pose = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])  # [x, y, z, alpha, beta, gamma]
+        self.bbox = self.mesh.get_axis_aligned_bounding_box()
+        bbox_low = self.bbox.min_bound.numpy()
+        bbox_high = self.bbox.max_bound.numpy()
+        low = bbox_low - self.sensor_range
+        high = bbox_high + self.sensor_range
+        self.action_space = spaces.Box(low=low, high=high, dtype=np.float32)
 
-        self.mesh_bbox = self.mesh.bounds
-        # Define the action space
-        self.action_space_low = np.array([self.mesh_bbox[0][0] - sensor_range,
-                                     self.mesh_bbox[0][1] - sensor_range,
-                                     self.mesh_bbox[0][2] - sensor_range,
-                                     -np.pi, -np.pi, -np.pi])
-        self.action_space_high = np.array([self.mesh_bbox[1][0] + sensor_range,
-                                      self.mesh_bbox[1][1] + sensor_range,
-                                      self.mesh_bbox[1][2] + sensor_range,
-                                      np.pi, np.pi, np.pi])
+        self.INVALID_ID = 4294967295
 
-        self.action_space = spaces.Box(low=self.action_space_low, high=self.action_space_high)
+        self.num_triangles = self.mesh.triangle.indices.shape[0]
+        self.observation_space = spaces.Box(low=0, high=1, shape=(self.num_triangles,), dtype=np.float32)
+        self.observation_history = np.zeros((self.num_triangles), dtype=np.float32)
+        self.percentage_covered = 0.0
+        self.tracker = None
 
-        # find the number of mesh elements from the loaded mesh
-        self.num_mesh_elements = len(self.mesh.faces)
-        self.observation_space = spaces.Box(low=np.array([0]*self.num_mesh_elements), high=np.array([1]*self.num_mesh_elements), dtype=np.int32)
-        self.observation_history = np.array([])
-
-        # Extract vertices from the mesh
-        self.vertices = self.mesh.vertices
-
-        # Convert vertices to a list of tuples for easier handling
-        self.mesh_elements = [(x, y, z) for x, y, z in self.vertices]
+        self.action_history = []
 
     def reset(self, seed=None, options=None):
         # Randomize the initial agent pose
         super().reset(seed=seed)
         self.agent_pose = self.action_space.sample()
-        self.observation_history = np.array([])
+        self.observation_history = np.zeros((self.num_triangles), dtype=np.float32)
 
     def step(self, action):
 
+        self.action_history.append(action)
         self.agent_pose = action
         
-        coverage_mask = self._compute_coverage_mask(self.agent_pose, self.sensor_range)
-        self.observation_space = coverage_mask
-
-        # Observation history is a 2D array with each row representing a single observation
-        # Each observation is a 1D array with 0s and 1s representing the visibility of each mesh element
-        self.observation_history = np.vstack((self.observation_history, self.observation_space)) if self.observation_history.size else np.reshape(np.append(self.observation_history,self.observation_space), (1, -1))
-
-        # Compute reward based on the entire observation space
-        reward = self._compute_reward(self.observation_space)
-
-        done = self._is_episode_done()
-        
+        self.tracker = self.get_observation(self.agent_pose)
+        self.observation_space = self.process_observation(self.tracker) 
+        self.observation_history = self.observation_space + self.observation_history
+        # Calculate the percentage of the mesh covered by the percent of non zero elements in the observation space
+        self.percentage_covered = np.count_nonzero(self.observation_history) / self.observation_history.shape[0]
+        reward = self.get_reward()
+        done = self.percentage_covered >= self.done_val
         # Step returns observation of state, reward, done, and info in a tuple
         print(f"Reward: {reward}")
+        print(f"Covered in current step: {np.count_nonzero(self.observation_space) / self.observation_space.shape[0]}%")
         return self.observation_space, reward, done, {}
 
-    def _compute_coverage_mask(self, sensor_pose, sensor_info):
-        face_centroids = np.zeros((self.num_mesh_elements, 3))
-        for i, face in enumerate(self.mesh.faces):
-            face_centroids[i] = np.mean(self.mesh.vertices[face], axis=0)
-
-        # Calculate the distance between the sensor and the centroid of each face
-        distances = np.linalg.norm(face_centroids - np.array(sensor_pose[:3]), axis=1)
-
-        # Identify faces within the sensor range
-        visible_faces = [face for face, distance in zip(self.mesh.faces, distances) if distance <= self.sensor_range]
-
-        # Convert the indices of visible faces to a binary array (coverage mask)
-        coverage_mask = np.zeros((self.num_mesh_elements))
-        for face in visible_faces:
-            # Find the index of the face in the mesh self.mesh.faces list
-            face_index = np.where(self.mesh.faces == face)[0][0]
-            coverage_mask[face_index] = 1
-
-        return coverage_mask
+    def get_observation(self, pose):
+        rays = self.scene.create_rays_pinhole(fov_deg=self.fov_deg,
+                                center = self.center,
+                                eye = pose,
+                                up = self.up,
+                                width_px=self.width_px,
+                                height_px=self.height_px)
+        result = self.scene.cast_rays(rays)
+        return result 
     
-    def _compute_reward(self, observation_space):
-        # Extract the latest observation
-        latest_observation = self.observation_history[-1, :]
+    def process_observation(self, tracker):
+        primitive_ids = tracker['primitive_ids'].numpy()
+        # Reshape primitive_ids to a 1D array
+        primitive_ids = primitive_ids.reshape(-1)
+        # Remove all the invalid IDs
+        primitive_ids = primitive_ids[primitive_ids != self.INVALID_ID]
+        primitive_ids = np.unique(primitive_ids)
+        
+        # Create a zero array of size num_triangles
+        observation = np.zeros(self.num_triangles)
+        # Set the elements in observation to 1 where the primitive_ids are present
+        observation[primitive_ids] = 1
+        return observation
 
-        # Extract all elements that were visible in the past observations
-        past_visible_elements = np.sum(self.observation_history[:-1, :], axis=0)
-
-        # Calculate the set difference (elements visible in the current but not in the past)
-        set_difference = np.sum(np.logical_and(latest_observation, np.logical_not(past_visible_elements)))
-
-        # Reward based on the set difference
-        reward = set_difference
-
-        return reward
+    def get_reward(self):
+        return self.percentage_covered*100
     
-    def _is_episode_done(self):
-        # Customize this method based on your termination condition
-        # For example, you can check if the coverage goal is achieved or if the maximum number of steps is reached
-        if self._check_termination():
-            return True
-        else:
-            return False
-
-    
-    def _check_termination(self):
-        # Calculate the total number of mesh elements
-        total_mesh_elements = self.observation_history.shape[1]
-
-        # Calculate the number of unique elements discovered across all observations
-        unique_elements = np.unique(self.observation_history, axis=0)
-        unique_elements_count = unique_elements.shape[0]
-
-        # Check if more than 50% of the mesh elements have been discovered
-        termination_condition = (unique_elements_count / total_mesh_elements) > 0.5
-
-        return termination_condition
-    
-    def create_camera_mesh(self):
-        # Define camera pyramid vertices and faces
-        camera_vertices = np.array([[0, 0, 0], [-0.1, -0.1, 0.1], [0.1, -0.1, 0.1], [0.1, 0.1, 0.1], [-0.1, 0.1, 0.1]])
-        camera_faces = np.array([[0, 1, 2], [0, 2, 3], [0, 3, 4], [0, 4, 1], [1, 2, 3],[2, 3, 4]])
-
-        # Create a trimesh object for the camera
-        camera_mesh = trimesh.Trimesh(vertices=camera_vertices, faces=camera_faces)
-
-        return camera_mesh
-
-    def position_and_orient_camera(self):
-        # Extract pose components
-        camera_mesh = self.create_camera_mesh()
-        x, y, z, alpha, beta, gamma = self.agent_pose
-
-        # Define transformation matrix for translation and rotation
-        transformation_matrix = trimesh.transformations.compose_matrix(
-            translate=[x, y, z],
-            angles=[alpha, beta, gamma],
-            scale=[1, 1, 1]
-        )
-
-        # Apply the transformation to the camera mesh
-        camera_mesh.apply_transform(transformation_matrix)
-
-        return camera_mesh
-
     def render(self):
-        # Find the sum of elements vertically and create a mask where the sum is more than 0. These are all elements visible
-        latest_observation = np.sum(self.observation_history, axis=0)
-        latest_observation = np.where(latest_observation > 0, 1, 0)
-        print(f"How many faces covered: {np.sum(latest_observation)}")
-        # print(f"No. of observations: {latest_observation.shape}")
-        # print(latest_observation)
+        plt.imshow(self.tracker['t_hit'].numpy())
 
-        test_mesh = self.mesh.copy()
-        # print(f"No. of faces: {len(test_mesh.faces)}")
-        for i, face in enumerate(test_mesh.faces):
-            if latest_observation[i] == 1:
-                test_mesh.visual.face_colors[face] = [255, 0, 0, 255]   # Red
-            else:
-                test_mesh.visual.face_colors[face] = [0, 255, 0, 255]   # Green
-
-        # test_mesh.show()
-        self.environment = test_mesh + self.position_and_orient_camera()
+    def close(self):
+        pass
 

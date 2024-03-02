@@ -3,10 +3,13 @@
 
 from setuptools import setup
 
-setup(name='viewpointWorld-v0',
+setup(
+        name='viewpointWorld-v0',
         version='0.0.1',
-        install_requires=['gymnasium', 'numpy', 'trimesh', 'scipy', 'matplotlib']
+        packages = ['viewpoint_env'],
+        install_requires=['gymnasium', 'numpy', 'open3d==0.18.0', 'scipy', 'matplotlib']
     )
+
 
 # Path: viewpoint_env/viewpointWorld-v0.py
 # Write the viewpointWorld-v0 environment.
