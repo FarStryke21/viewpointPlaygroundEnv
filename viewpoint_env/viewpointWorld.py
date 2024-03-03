@@ -7,7 +7,8 @@ import matplotlib.pyplot as plt
 
 class CoverageEnv(gym.Env):
     def __init__(self, mesh_file='/home/aman/Desktop/RL_CoveragePlanning/viewpointPlaygroundEnv/meshes/stanford_bunny.obj',
-                  sensor_range=0.1, fov_deg=60, width_px=320, height_px=240, coverage_req=0.99):
+                  sensor_range=0.1, fov_deg=60, width_px=320, height_px=240, coverage_req=0.99,
+                  render_mode='rgb_array'):
         super(CoverageEnv, self).__init__()
 
         self.mesh = o3d.io.read_triangle_mesh(mesh_file)
@@ -45,6 +46,7 @@ class CoverageEnv(gym.Env):
     def reset(self, seed=None, options=None):
         # Randomize the initial agent pose
         super().reset(seed=seed)
+        # print("Resetting the environment...")
         self.agent_pose = self.action_space.sample()
         self.observation_history = np.zeros((self.num_triangles), dtype=np.float32)
         self.percentage_covered = 0.0
@@ -67,8 +69,10 @@ class CoverageEnv(gym.Env):
         terminated = self.percentage_covered >= self.done_val
         truncated = False
         # Step returns observation of state, reward, done, and info in a tuple
-        print(f"Reward: {reward}")
-        print(f"Covered in current step: {np.count_nonzero(self.observation_space) / self.observation_space.shape[0]}%")
+        # print(f"Count {len(self.action_history)}")
+        # print(f"Reward: {reward}")
+        # print(f"Covered in current step: {(np.count_nonzero(self.observation_space) / self.observation_space.shape[0])*100}%")
+        # print(f"Total Percentage covered: {self.percentage_covered*100}% \n")
         return self.observation_space, reward, terminated, truncated, {}
 
     def get_observation(self, pose):
@@ -96,11 +100,21 @@ class CoverageEnv(gym.Env):
         return observation
 
     def get_reward(self):
-        return self.percentage_covered*100
+        # Subtract observation history from the current observation space
+        reward_list = self.observation_space - self.observation_history
+        # Find number of positive elements in the reward list
+        mask = reward_list > 0
+        new_covered = mask.sum()
+        percentage_new = new_covered / self.observation_space.shape[0]
+        return (-1000*len(self.action_history)) + (percentage_new*100)
     
     def render(self):
         plt.imshow(self.tracker['t_hit'].numpy())
 
     def close(self):
         pass
-
+        # print("Summary of the coverage")
+        # print("-----------------------------------------------")
+        # print(f"Percentage of mesh covered: {self.percentage_covered*100}%")
+        # print(f"Number of steps: {len(self.action_history)}")
+        # print("\n")
