@@ -5,9 +5,30 @@ from gymnasium import spaces
 from scipy.spatial.transform import Rotation
 import matplotlib.pyplot as plt
 
+class HollowCuboidActionSpace(gym.Space):
+    def __init__(self, low, high, thickness):
+        self.low = low
+        self.high = high
+        self.thickness = thickness
+        self.outer_space = gym.spaces.Box(low=low - thickness, high=high + thickness)
+        self.inner_space = gym.spaces.Box(low=low, high=high)
+        self.n = int(np.prod(self.outer_space.shape)) - int(np.prod(self.inner_space.shape))
+        # print(f"outer_space: {self.outer_space.__repr__()}")
+        # print(f"inner_space: {self.inner_space.__repr__()}")
+        self._shape = self.outer_space.shape
+
+    def sample(self):
+        return self.outer_space.sample()
+
+    def contains(self, x):
+        return self.outer_space.contains(x) and not self.inner_space.contains(x)
+
+    def __repr__(self):
+        return "HollowCuboidActionSpace({}, {}, thickness={})".format(self.low, self.high, self.thickness)
+
 class CoverageEnv(gym.Env):
     def __init__(self, mesh_file='/home/aman/Desktop/RL_CoveragePlanning/viewpointPlaygroundEnv/meshes/stanford_bunny.obj',
-                  sensor_range=0.1, fov_deg=60, width_px=320, height_px=240, coverage_req=0.99,
+                  sensor_range=0.01, fov_deg=60, width_px=320, height_px=240, coverage_req=0.99,
                   render_mode='rgb_array',
                   save_action_history=True, save_path = '/home/aman/Desktop/RL_CoveragePlanning/action/poses.csv'):
         super(CoverageEnv, self).__init__()
@@ -31,12 +52,10 @@ class CoverageEnv(gym.Env):
 
         self.sensor_range = sensor_range
         self.bbox = self.mesh.get_axis_aligned_bounding_box()
-        bbox_low = self.bbox.min_bound.numpy()
-        bbox_high = self.bbox.max_bound.numpy()
-        low = bbox_low - self.sensor_range
-        high = bbox_high + self.sensor_range
+        low = self.bbox.min_bound.numpy()
+        high = self.bbox.max_bound.numpy()
 
-        self.action_space = spaces.Box(low=low, high=high, dtype=np.float32)
+        self.action_space = HollowCuboidActionSpace(low, high, self.sensor_range)
 
         self.INVALID_ID = 4294967295
 
@@ -89,14 +108,14 @@ class CoverageEnv(gym.Env):
         # print(f"Total Percentage covered: {self.percentage_covered*100}% \n")
         return self.observation_space, reward, terminated, truncated, {}
 
-    def validate_action(self, action):
-        if action[0] < self.bbox.min_bound[0] or action[0] > self.bbox.max_bound[0]:
-            return False
-        if action[1] < self.bbox.min_bound[1] or action[1] > self.bbox.max_bound[1]:
-            return False
-        if action[2] < self.bbox.min_bound[2] or action[2] > self.bbox.max_bound[2]:
-            return False
-        return True
+    # def validate_action(self, action):
+    #     if action[0] < self.bbox.min_bound[0] or action[0] > self.bbox.max_bound[0]:
+    #         return False
+    #     if action[1] < self.bbox.min_bound[1] or action[1] > self.bbox.max_bound[1]:
+    #         return False
+    #     if action[2] < self.bbox.min_bound[2] or action[2] > self.bbox.max_bound[2]:
+    #         return False
+    #     return True
     
     def get_observation(self, pose):
         rays = self.scene.create_rays_pinhole(fov_deg=self.fov_deg,
