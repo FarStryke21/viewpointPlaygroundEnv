@@ -8,8 +8,12 @@ import matplotlib.pyplot as plt
 class CoverageEnv(gym.Env):
     def __init__(self, mesh_file='/home/aman/Desktop/RL_CoveragePlanning/viewpointPlaygroundEnv/meshes/stanford_bunny.obj',
                   sensor_range=0.1, fov_deg=60, width_px=320, height_px=240, coverage_req=0.99,
-                  render_mode='rgb_array'):
+                  render_mode='rgb_array',
+                  save_action_history=True, save_path = '/home/aman/Desktop/RL_CoveragePlanning/action/poses.csv'):
         super(CoverageEnv, self).__init__()
+
+        self.save_action_history = save_action_history
+        self.save_path = save_path
 
         self.mesh = o3d.io.read_triangle_mesh(mesh_file)
         self.mesh = o3d.t.geometry.TriangleMesh.from_legacy(self.mesh)
@@ -31,6 +35,7 @@ class CoverageEnv(gym.Env):
         bbox_high = self.bbox.max_bound.numpy()
         low = bbox_low - self.sensor_range
         high = bbox_high + self.sensor_range
+
         self.action_space = spaces.Box(low=low, high=high, dtype=np.float32)
 
         self.INVALID_ID = 4294967295
@@ -56,18 +61,27 @@ class CoverageEnv(gym.Env):
         return self.observation_history, {}
 
     def step(self, action):
-
+        # Validate the action
+        # if self.validate_action(action):
+        #     print("Invalid action requested...")
+        #     self.observation_space = np.zeros((self.num_triangles), dtype=np.float32)
+        # else:
         self.action_history.append(action)
         self.agent_pose = action
-        
+        # print(f"Agent pose: {self.agent_pose}")
         self.tracker = self.get_observation(self.agent_pose)
         self.observation_space = self.process_observation(self.tracker) 
         self.observation_history = self.observation_space + self.observation_history
+        
         # Calculate the percentage of the mesh covered by the percent of non zero elements in the observation space
         self.percentage_covered = np.count_nonzero(self.observation_history) / self.observation_history.shape[0]
         reward = self.get_reward()
         terminated = self.percentage_covered >= self.done_val
         truncated = False
+
+        # if len(self.action_history) > 5:
+        #     terminated = True
+
         # Step returns observation of state, reward, done, and info in a tuple
         # print(f"Count {len(self.action_history)}")
         # print(f"Reward: {reward}")
@@ -75,6 +89,15 @@ class CoverageEnv(gym.Env):
         # print(f"Total Percentage covered: {self.percentage_covered*100}% \n")
         return self.observation_space, reward, terminated, truncated, {}
 
+    def validate_action(self, action):
+        if action[0] < self.bbox.min_bound[0] or action[0] > self.bbox.max_bound[0]:
+            return False
+        if action[1] < self.bbox.min_bound[1] or action[1] > self.bbox.max_bound[1]:
+            return False
+        if action[2] < self.bbox.min_bound[2] or action[2] > self.bbox.max_bound[2]:
+            return False
+        return True
+    
     def get_observation(self, pose):
         rays = self.scene.create_rays_pinhole(fov_deg=self.fov_deg,
                                 center = self.center,
@@ -112,7 +135,9 @@ class CoverageEnv(gym.Env):
         plt.imshow(self.tracker['t_hit'].numpy())
 
     def close(self):
-        pass
+        if self.save_action_history:
+            print("Saving the action history...")
+            np.savetxt(self.save_path, self.action_history, delimiter=",")
         # print("Summary of the coverage")
         # print("-----------------------------------------------")
         # print(f"Percentage of mesh covered: {self.percentage_covered*100}%")
