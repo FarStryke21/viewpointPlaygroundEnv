@@ -5,20 +5,22 @@ from gymnasium import spaces
 from scipy.spatial.transform import Rotation
 import matplotlib.pyplot as plt
 
-class HollowCuboidActionSpace(gym.Space):
+class HollowCuboidActionSpace(gym.spaces.Box):
     def __init__(self, low, high, thickness):
         self.low = low
         self.high = high
         self.thickness = thickness
         self.outer_space = gym.spaces.Box(low=low - thickness, high=high + thickness)
         self.inner_space = gym.spaces.Box(low=low, high=high)
-        self.n = int(np.prod(self.outer_space.shape)) - int(np.prod(self.inner_space.shape))
-        # print(f"outer_space: {self.outer_space.__repr__()}")
-        # print(f"inner_space: {self.inner_space.__repr__()}")
-        self._shape = self.outer_space.shape
+        super().__init__(low - thickness, high + thickness, dtype=np.float32)
+        
 
     def sample(self):
-        return self.outer_space.sample()
+        action = self.outer_space.sample()
+        if not self.inner_space.contains(action):
+            return action
+        else:
+            return self.sample()
 
     def contains(self, x):
         return self.outer_space.contains(x) and not self.inner_space.contains(x)
@@ -28,7 +30,7 @@ class HollowCuboidActionSpace(gym.Space):
 
 class CoverageEnv(gym.Env):
     def __init__(self, mesh_file='/home/aman/Desktop/RL_CoveragePlanning/viewpointPlaygroundEnv/meshes/stanford_bunny.obj',
-                  sensor_range=0.01, fov_deg=60, width_px=320, height_px=240, coverage_req=0.99,
+                  sensor_range=0.1, fov_deg=60, width_px=320, height_px=240, coverage_req=0.99,
                   render_mode='rgb_array',
                   save_action_history=True, save_path = '/home/aman/Desktop/RL_CoveragePlanning/action/poses.csv'):
         super(CoverageEnv, self).__init__()
@@ -80,11 +82,8 @@ class CoverageEnv(gym.Env):
         return self.observation_history, {}
 
     def step(self, action):
-        # Validate the action
-        # if self.validate_action(action):
-        #     print("Invalid action requested...")
-        #     self.observation_space = np.zeros((self.num_triangles), dtype=np.float32)
-        # else:
+        
+        # print(f"Action: {action} | Valid: {self.action_space.contains(action)}")
         self.action_history.append(action)
         self.agent_pose = action
         # print(f"Agent pose: {self.agent_pose}")
@@ -98,24 +97,13 @@ class CoverageEnv(gym.Env):
         terminated = self.percentage_covered >= self.done_val
         truncated = False
 
-        # if len(self.action_history) > 5:
-        #     terminated = True
-
         # Step returns observation of state, reward, done, and info in a tuple
         # print(f"Count {len(self.action_history)}")
         # print(f"Reward: {reward}")
         # print(f"Covered in current step: {(np.count_nonzero(self.observation_space) / self.observation_space.shape[0])*100}%")
         # print(f"Total Percentage covered: {self.percentage_covered*100}% \n")
+        
         return self.observation_space, reward, terminated, truncated, {}
-
-    # def validate_action(self, action):
-    #     if action[0] < self.bbox.min_bound[0] or action[0] > self.bbox.max_bound[0]:
-    #         return False
-    #     if action[1] < self.bbox.min_bound[1] or action[1] > self.bbox.max_bound[1]:
-    #         return False
-    #     if action[2] < self.bbox.min_bound[2] or action[2] > self.bbox.max_bound[2]:
-    #         return False
-    #     return True
     
     def get_observation(self, pose):
         rays = self.scene.create_rays_pinhole(fov_deg=self.fov_deg,
@@ -148,7 +136,7 @@ class CoverageEnv(gym.Env):
         mask = reward_list > 0
         new_covered = mask.sum()
         percentage_new = new_covered / self.observation_space.shape[0]
-        return (-1000*len(self.action_history)) + (percentage_new*100)
+        return (-100*len(self.action_history)) + (percentage_new*100)
     
     def render(self):
         plt.imshow(self.tracker['t_hit'].numpy())
