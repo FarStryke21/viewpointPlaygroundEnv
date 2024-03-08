@@ -29,17 +29,24 @@ class HollowCuboidActionSpace(gym.spaces.Box):
         return "HollowCuboidActionSpace({}, {}, thickness={})".format(self.low, self.high, self.thickness)
 
 class CoverageEnv(gym.Env):
-    def __init__(self, mesh_file='/home/aman/Desktop/RL_CoveragePlanning/viewpointPlaygroundEnv/meshes/stanford_bunny.obj',
+    def __init__(self, mesh_file='/home/aman/Desktop/RL_CoveragePlanning/test_models/test_2.obj',
                   sensor_range=0.1, fov_deg=60, width_px=320, height_px=240, coverage_req=0.99,
                   render_mode='rgb_array',
-                  save_action_history=True, save_path = '/home/aman/Desktop/RL_CoveragePlanning/action/poses.csv'):
+                  save_action_history=True, save_path = '/home/aman/Desktop/RL_CoveragePlanning/action/poses_test_2.csv'):
         super(CoverageEnv, self).__init__()
 
         self.save_action_history = save_action_history
         self.save_path = save_path
 
+        self.mesh_resolution = 4968
         self.mesh = o3d.io.read_triangle_mesh(mesh_file)
+        
+        self.mesh.scale(0.001, center=self.mesh.get_center())
+        self.mesh.translate(-self.mesh.get_center())
+        self.mesh = self.mesh.simplify_quadric_decimation(self.mesh_resolution)
+        
         self.mesh = o3d.t.geometry.TriangleMesh.from_legacy(self.mesh)
+
         self.scene = o3d.t.geometry.RaycastingScene()
         self.scene.add_triangles(self.mesh)
 
@@ -86,7 +93,7 @@ class CoverageEnv(gym.Env):
         # print(f"Action: {action} | Valid: {self.action_space.contains(action)}")
         self.action_history.append(action)
         self.agent_pose = action
-        # print(f"Agent pose: {self.agent_pose}")
+        print(f"Agent pose: {self.agent_pose}")
         self.tracker = self.get_observation(self.agent_pose)
         self.observation_space = self.process_observation(self.tracker) 
         self.observation_history = self.observation_space + self.observation_history
@@ -98,10 +105,10 @@ class CoverageEnv(gym.Env):
         truncated = False
 
         # Step returns observation of state, reward, done, and info in a tuple
-        # print(f"Count {len(self.action_history)}")
-        # print(f"Reward: {reward}")
-        # print(f"Covered in current step: {(np.count_nonzero(self.observation_space) / self.observation_space.shape[0])*100}%")
-        # print(f"Total Percentage covered: {self.percentage_covered*100}% \n")
+        print(f"Count {len(self.action_history)}")
+        print(f"Reward: {reward}")
+        print(f"Covered in current step: {(np.count_nonzero(self.observation_space) / self.observation_space.shape[0])*100}%")
+        print(f"Total Percentage covered: {self.percentage_covered*100}% \n")
         
         return self.observation_space, reward, terminated, truncated, {}
     
