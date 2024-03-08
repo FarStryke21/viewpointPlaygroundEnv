@@ -4,6 +4,7 @@ import open3d as o3d
 from gymnasium import spaces
 from scipy.spatial.transform import Rotation
 import matplotlib.pyplot as plt
+import os
 
 class HollowCuboidActionSpace(gym.spaces.Box):
     def __init__(self, low, high, thickness):
@@ -29,21 +30,28 @@ class HollowCuboidActionSpace(gym.spaces.Box):
         return "HollowCuboidActionSpace({}, {}, thickness={})".format(self.low, self.high, self.thickness)
 
 class CoverageEnv(gym.Env):
-    def __init__(self, mesh_file='/home/aman/Desktop/RL_CoveragePlanning/test_models/test_2.obj',
-                  sensor_range=0.1, fov_deg=60, width_px=320, height_px=240, coverage_req=0.99,
-                  render_mode='rgb_array',
-                  save_action_history=True, save_path = '/home/aman/Desktop/RL_CoveragePlanning/action/poses_test_2.csv'):
+    def __init__(self, mesh_folder='/home/aman/Desktop/RL_CoveragePlanning/test_models/modified',
+                  sensor_range=20, fov_deg=60, width_px=320, height_px=240, coverage_req=0.99,
+                  render_mode='rgb_array', train = True,
+                  save_action_history=True, save_path = '/home/aman/Desktop/RL_CoveragePlanning/action'):
+        
         super(CoverageEnv, self).__init__()
 
         self.save_action_history = save_action_history
         self.save_path = save_path
 
-        self.mesh_resolution = 4968
-        self.mesh = o3d.io.read_triangle_mesh(mesh_file)
-        
-        self.mesh.scale(0.001, center=self.mesh.get_center())
+        # if model is being trained, select a random mesh file from the folder
+        if train:
+            self.mesh_file_name = self.get_mesh_file(mesh_folder)
+            self.mesh_file = os.path.join(mesh_folder, self.mesh_file_name)
+        else:
+            self.mesh_file_name = 'test_0.obj'
+            self.mesh_file = os.path.join(mesh_folder, self.mesh_file_name)
+
+        print(f"Mesh file: {self.mesh_file_name} loaded for environment..."
+              )
+        self.mesh = o3d.io.read_triangle_mesh(self.mesh_file)
         self.mesh.translate(-self.mesh.get_center())
-        self.mesh = self.mesh.simplify_quadric_decimation(self.mesh_resolution)
         
         self.mesh = o3d.t.geometry.TriangleMesh.from_legacy(self.mesh)
 
@@ -112,6 +120,12 @@ class CoverageEnv(gym.Env):
         
         return self.observation_space, reward, terminated, truncated, {}
     
+    def get_mesh_file(self, folder):
+        # Get the file path of the mesh file
+        files = os.listdir(folder)
+        # rabdomly select a file from the folder
+        return np.random.choice(files)
+
     def get_observation(self, pose):
         rays = self.scene.create_rays_pinhole(fov_deg=self.fov_deg,
                                 center = self.center,
@@ -150,10 +164,6 @@ class CoverageEnv(gym.Env):
 
     def close(self):
         if self.save_action_history:
+            self.pose_path = os.path.join(self.save_path, f'{self.mesh_file_name.split('.')[0]}_poses.csv')
             print("Saving the action history...")
-            np.savetxt(self.save_path, self.action_history, delimiter=",")
-        # print("Summary of the coverage")
-        # print("-----------------------------------------------")
-        # print(f"Percentage of mesh covered: {self.percentage_covered*100}%")
-        # print(f"Number of steps: {len(self.action_history)}")
-        # print("\n")
+            np.savetxt(self.pose_path, self.action_history, delimiter=",")
