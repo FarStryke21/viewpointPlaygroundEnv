@@ -31,8 +31,8 @@ class HollowCuboidActionSpace(gym.spaces.Box):
 
 class CoverageEnv(gym.Env):
     def __init__(self, mesh_folder='/home/aman/Desktop/RL_CoveragePlanning/test_models/modified',
-                  sensor_range=20, fov_deg=60, width_px=320, height_px=240, coverage_req=0.99,
-                  render_mode='rgb_array', train = True,
+                  sensor_range=0.1, fov_deg=60, width_px=320, height_px=240, coverage_req=0.99,
+                  render_mode='rgb_array', train = False,
                   save_action_history=True, save_path = '/home/aman/Desktop/RL_CoveragePlanning/action'):
         
         super(CoverageEnv, self).__init__()
@@ -48,9 +48,10 @@ class CoverageEnv(gym.Env):
             self.mesh_file_name = 'test_0.obj'
             self.mesh_file = os.path.join(mesh_folder, self.mesh_file_name)
 
-        print(f"Mesh file: {self.mesh_file_name} loaded for environment..."
-              )
+        print(f"Mesh file: {self.mesh_file_name} loaded for environment...")
+
         self.mesh = o3d.io.read_triangle_mesh(self.mesh_file)
+        self.mesh.scale(0.01, center=self.mesh.get_center())
         self.mesh.translate(-self.mesh.get_center())
         
         self.mesh = o3d.t.geometry.TriangleMesh.from_legacy(self.mesh)
@@ -71,6 +72,8 @@ class CoverageEnv(gym.Env):
         self.bbox = self.mesh.get_axis_aligned_bounding_box()
         low = self.bbox.min_bound.numpy()
         high = self.bbox.max_bound.numpy()
+
+        print(f"Low: {low} | High: {high}")
 
         self.action_space = HollowCuboidActionSpace(low, high, self.sensor_range)
 
@@ -96,12 +99,11 @@ class CoverageEnv(gym.Env):
 
         return self.observation_history, {}
 
-    def step(self, action):
-        
+    def step(self, action):    
         # print(f"Action: {action} | Valid: {self.action_space.contains(action)}")
         self.action_history.append(action)
         self.agent_pose = action
-        print(f"Agent pose: {self.agent_pose}")
+        # print(f"Agent pose: {self.agent_pose}")
         self.tracker = self.get_observation(self.agent_pose)
         self.observation_space = self.process_observation(self.tracker) 
         self.observation_history = self.observation_space + self.observation_history
@@ -113,17 +115,17 @@ class CoverageEnv(gym.Env):
         truncated = False
 
         # Step returns observation of state, reward, done, and info in a tuple
-        print(f"Count {len(self.action_history)}")
-        print(f"Reward: {reward}")
-        print(f"Covered in current step: {(np.count_nonzero(self.observation_space) / self.observation_space.shape[0])*100}%")
-        print(f"Total Percentage covered: {self.percentage_covered*100}% \n")
+        # print(f"Count {len(self.action_history)}")
+        # print(f"Reward: {reward}")
+        # print(f"Covered in current step: {(np.count_nonzero(self.observation_space) / self.observation_space.shape[0])*100}%")
+        # print(f"Total Percentage covered: {self.percentage_covered*100}% \n")
         
         return self.observation_space, reward, terminated, truncated, {}
     
     def get_mesh_file(self, folder):
         # Get the file path of the mesh file
         files = os.listdir(folder)
-        # rabdomly select a file from the folder
+        # randomly select a file from the folder
         return np.random.choice(files)
 
     def get_observation(self, pose):
@@ -164,6 +166,6 @@ class CoverageEnv(gym.Env):
 
     def close(self):
         if self.save_action_history:
-            self.pose_path = os.path.join(self.save_path, f'{self.mesh_file_name.split('.')[0]}_poses.csv')
+            self.pose_path = os.path.join(self.save_path, f"{self.mesh_file_name.split('.')[0]}_poses.csv")
             print("Saving the action history...")
-            np.savetxt(self.pose_path, self.action_history, delimiter=",")
+            np.savetxt(self.pose_path, np.unique(self.action_history, axis=0), delimiter=",")
