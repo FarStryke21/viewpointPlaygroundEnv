@@ -29,11 +29,17 @@ class HollowCuboidActionSpace(gym.spaces.Box):
     def __repr__(self):
         return "HollowCuboidActionSpace({}, {}, thickness={})".format(self.low, self.high, self.thickness)
 
+
+    
 class CoverageEnv(gym.Env):
     def __init__(self, mesh_folder='/home/aman/Desktop/RL_CoveragePlanning/test_models/modified',
-                  sensor_range=0.1, fov_deg=60, width_px=320, height_px=240, coverage_req=0.99,
-                  render_mode='rgb_array', train = False,
-                  save_action_history=True, save_path = '/home/aman/Desktop/RL_CoveragePlanning/action'):
+                  sensor_range=50, fov_deg=60, width_px=320, height_px=240, 
+                  coverage_req=0.8,
+                  render_mode='rgb_array', 
+                  train = False,
+                  save_action_history=True, 
+                  save_path = '/home/aman/Desktop/RL_CoveragePlanning/action'
+                ):
         
         super(CoverageEnv, self).__init__()
 
@@ -51,7 +57,7 @@ class CoverageEnv(gym.Env):
         print(f"Mesh file: {self.mesh_file_name} loaded for environment...")
 
         self.mesh = o3d.io.read_triangle_mesh(self.mesh_file)
-        self.mesh.scale(0.01, center=self.mesh.get_center())
+        # self.mesh.scale(0.01, center=self.mesh.get_center())
         self.mesh.translate(-self.mesh.get_center())
         
         self.mesh = o3d.t.geometry.TriangleMesh.from_legacy(self.mesh)
@@ -73,9 +79,10 @@ class CoverageEnv(gym.Env):
         low = self.bbox.min_bound.numpy()
         high = self.bbox.max_bound.numpy()
 
-        print(f"Low: {low} | High: {high}")
+        # print(f"Low: {low} | High: {high}")
 
-        self.action_space = HollowCuboidActionSpace(low, high, self.sensor_range)
+        # self.action_space = HollowCuboidActionSpace(low, high, self.sensor_range)
+        self.action_space = spaces.Box(low=-np.pi, high=np.pi, shape=(2,), dtype=np.float32)
 
         self.INVALID_ID = 4294967295
 
@@ -99,7 +106,9 @@ class CoverageEnv(gym.Env):
 
         return self.observation_history, {}
 
-    def step(self, action):    
+    def step(self, action):
+
+        action = self.get_pose(action)    
         # print(f"Action: {action} | Valid: {self.action_space.contains(action)}")
         self.action_history.append(action)
         self.agent_pose = action
@@ -128,6 +137,16 @@ class CoverageEnv(gym.Env):
         # randomly select a file from the folder
         return np.random.choice(files)
 
+    def get_pose(self, action):
+        # Modify action here
+        theta, phi = action[0], action[1]
+        x = self.sensor_range * np.sin(phi) * np.cos(theta)
+        y = self.sensor_range * np.sin(phi) * np.sin(theta)
+        z = self.sensor_range * np.cos(phi)
+
+        modified_action = np.array([x, y, z])
+        return modified_action
+    
     def get_observation(self, pose):
         rays = self.scene.create_rays_pinhole(fov_deg=self.fov_deg,
                                 center = self.center,
@@ -154,12 +173,23 @@ class CoverageEnv(gym.Env):
 
     def get_reward(self):
         # Subtract observation history from the current observation space
-        reward_list = self.observation_space - self.observation_history
-        # Find number of positive elements in the reward list
-        mask = reward_list > 0
-        new_covered = mask.sum()
-        percentage_new = new_covered / self.observation_space.shape[0]
-        return (-100*len(self.action_history)) + (percentage_new*100)
+        # reward_list = self.observation_space - self.observation_history
+        # print(f"Reward List: {reward_list}")
+        # # Find number of positive elements in the reward list
+        # mask = reward_list > 0
+        # print(f"Mask: {mask}")
+        # new_covered = mask.sum()
+        # print(f"New Covered: {new_covered}")
+        # percentage_new = new_covered / self.observation_space.shape[0]
+        # print(f"New Percentage covered in this step: {percentage_new*100}%")
+        # return (-1000*len(self.action_history)) + (self.percentage_covered*100)
+        past_history = self.observation_history-self.observation_space
+        xor_result = np.logical_xor(past_history, self.observation_history)
+        new_covered = (np.sum(xor_result) / self.observation_space.shape[0])*100
+        # reward = (-1*len(self.action_history)) + (new_covered*10)
+        reward = (new_covered*10) 
+        # print(f"Reward: {reward}")
+        return reward
     
     def render(self):
         plt.imshow(self.tracker['t_hit'].numpy())
@@ -169,3 +199,5 @@ class CoverageEnv(gym.Env):
             self.pose_path = os.path.join(self.save_path, f"{self.mesh_file_name.split('.')[0]}_poses.csv")
             print("Saving the action history...")
             np.savetxt(self.pose_path, np.unique(self.action_history, axis=0), delimiter=",")
+            print("Percentage covered: ", (self.percentage_covered*100))
+            print(f"Number of actions: {len(self.action_history)}")
