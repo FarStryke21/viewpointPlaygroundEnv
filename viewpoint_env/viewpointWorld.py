@@ -33,8 +33,8 @@ class HollowCuboidActionSpace(gym.spaces.Box):
     
 class CoverageEnv(gym.Env):
     def __init__(self, mesh_folder='/home/aman/Desktop/RL_CoveragePlanning/test_models/modified',
-                  sensor_range=50, fov_deg=60, width_px=320, height_px=240, 
-                  coverage_req=0.8,
+                  sensor_range=40, fov_deg=60, width_px=320, height_px=240, 
+                  coverage_req=0.95,
                   render_mode='rgb_array', 
                   train = False,
                   save_action_history=True, 
@@ -51,7 +51,7 @@ class CoverageEnv(gym.Env):
             self.mesh_file_name = self.get_mesh_file(mesh_folder)
             self.mesh_file = os.path.join(mesh_folder, self.mesh_file_name)
         else:
-            self.mesh_file_name = 'test_0.obj'
+            self.mesh_file_name = 'test_6.obj'
             self.mesh_file = os.path.join(mesh_folder, self.mesh_file_name)
 
         print(f"Mesh file: {self.mesh_file_name} loaded for environment...")
@@ -173,20 +173,14 @@ class CoverageEnv(gym.Env):
 
     def get_reward(self):
         # Subtract observation history from the current observation space
-        # reward_list = self.observation_space - self.observation_history
-        # print(f"Reward List: {reward_list}")
-        # # Find number of positive elements in the reward list
-        # mask = reward_list > 0
-        # print(f"Mask: {mask}")
-        # new_covered = mask.sum()
-        # print(f"New Covered: {new_covered}")
-        # percentage_new = new_covered / self.observation_space.shape[0]
-        # print(f"New Percentage covered in this step: {percentage_new*100}%")
-        # return (-1000*len(self.action_history)) + (self.percentage_covered*100)
         past_history = self.observation_history-self.observation_space
         xor_result = np.logical_xor(past_history, self.observation_history)
         new_covered = (np.sum(xor_result) / self.observation_space.shape[0])*100
-        # reward = (-1*len(self.action_history)) + (new_covered*10)
+        # get the mean position of all actions
+        mean_action = np.mean(self.action_history, axis=0)
+        # find disance of mean from the center of the mesh
+        distance = np.linalg.norm(mean_action)
+        reward = (-10*len(self.action_history)) + (new_covered*100) + ((1/distance)*100)
         reward = (new_covered*10) 
         # print(f"Reward: {reward}")
         return reward
