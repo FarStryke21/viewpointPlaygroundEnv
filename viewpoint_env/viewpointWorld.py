@@ -36,7 +36,7 @@ class CoverageEnv(gym.Env):
                   sensor_range=40, fov_deg=60, width_px=320, height_px=240, 
                   coverage_req=0.95,
                   render_mode='rgb_array', 
-                  train = False,
+                  train = True,
                   save_action_history=True, 
                   save_path = '/home/aman/Desktop/RL_CoveragePlanning/action'
                 ):
@@ -51,7 +51,7 @@ class CoverageEnv(gym.Env):
             self.mesh_file_name = self.get_mesh_file(mesh_folder)
             self.mesh_file = os.path.join(mesh_folder, self.mesh_file_name)
         else:
-            self.mesh_file_name = 'test_6.obj'
+            self.mesh_file_name = 'test_2.obj'
             self.mesh_file = os.path.join(mesh_folder, self.mesh_file_name)
 
         print(f"Mesh file: {self.mesh_file_name} loaded for environment...")
