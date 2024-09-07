@@ -1,18 +1,18 @@
-# Write the setup.py file for the viewpointWorld-v0 environment.
-# The setup.py file is used to install the viewpointWorld-v0 environment.
-
-from setuptools import setup
+from setuptools import setup, find_packages
 
 setup(
-        name='viewpointWorld-v0',
-        version='0.0.1',
-        packages = ['viewpoint_env'],
-        install_requires=['gymnasium', 'numpy', 'open3d==0.18.0', 'scipy', 'matplotlib']
-    )
-
-
-# Path: viewpoint_env/viewpointWorld-v0.py
-# Write the viewpointWorld-v0 environment.
-# The viewpointWorld-v0 environment is a 3D environment that is used to train a robot to explore a 3D environment.
-# The robot is trained to explore the environment by maximizing the coverage of the environment.
-# The environment is defined by a 3D mesh file.
+    nname='viewpoint-world',  # Use a valid package name
+    version='0.0.1',
+    packages=find_packages(),  # Automatically find packages in the directory
+    install_requires=[
+        'gymnasium',
+        'numpy',
+        'open3d==0.18.0',
+        'scipy',
+        'matplotlib'
+    ],
+    python_requires='>=3.6',
+    description='A viewpoint world environment',  # Add a brief description
+    author='Aman Chulawala',  # Add your name
+    author_email='aman.chulawala@gmail.com',  # Add your email
+)

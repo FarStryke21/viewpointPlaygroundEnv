@@ -1,0 +1,12 @@
+Metadata-Version: 2.1
+Name: viewpoint_env
+Version: 0.0.1
+Summary: A viewpoint world environment
+Author: Aman Chulawala
+Author-email: aman.chulawala@gmail.com
+Requires-Python: >=3.6
+Requires-Dist: gymnasium
+Requires-Dist: numpy
+Requires-Dist: open3d==0.18.0
+Requires-Dist: scipy
+Requires-Dist: matplotlib

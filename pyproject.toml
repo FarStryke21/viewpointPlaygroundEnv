@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "viewpointWorld-v0"
+version = "0.0.1"
+description = "A viewpoint world environment for reinforcement learning"
+authors = [
+    {name = "Aman Chulawala", email = "aman.chulawala@gmail.com"},
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.6"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+dependencies = [
+    'gymnasium',
+    'numpy',
+    'open3d==0.18.0',
+    'scipy',
+    'matplotlib',
+    # Add other dependencies here
+]
+
+
+[tool.setuptools]
+packages = ["viewpoint_env"]
+
