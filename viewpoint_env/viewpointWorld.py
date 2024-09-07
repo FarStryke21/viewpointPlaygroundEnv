@@ -32,13 +32,13 @@ class HollowCuboidActionSpace(gym.spaces.Box):
 
     
 class CoverageEnv(gym.Env):
-    def __init__(self, mesh_folder='/home/aman/Desktop/RL_CoveragePlanning/test_models/modified',
+    def __init__(self, mesh_folder='/home/dir/RL_CoveragePlanning/test_models/modified',
                   sensor_range=50, fov_deg=60, width_px=320, height_px=240, 
                   coverage_req=0.95,
                   render_mode='rgb_array', 
                   train = False,
                   save_action_history=True, 
-                  save_path = '/home/aman/Desktop/RL_CoveragePlanning/action'
+                  save_path = '/home/dir/RL_CoveragePlanning/action'
                 ):
         
         super(CoverageEnv, self).__init__()
