@@ -1,17 +1,42 @@
 import gymnasium as gym
 import numpy as np
-import torch
 import open3d as o3d
 from gymnasium import spaces
-import os
+from scipy.spatial.transform import Rotation
 import matplotlib.pyplot as plt
+import os
 
+class HollowCuboidActionSpace(gym.spaces.Box):
+    def __init__(self, low, high, thickness):
+        self.low = low
+        self.high = high
+        self.thickness = thickness
+        self.outer_space = gym.spaces.Box(low=low - thickness, high=high + thickness)
+        self.inner_space = gym.spaces.Box(low=low, high=high)
+        super().__init__(low - thickness, high + thickness, dtype=np.float32)
+        
+
+    def sample(self):
+        action = self.outer_space.sample()
+        if not self.inner_space.contains(action):
+            return action
+        else:
+            return self.sample()
+
+    def contains(self, x):
+        return self.outer_space.contains(x) and not self.inner_space.contains(x)
+
+    def __repr__(self):
+        return "HollowCuboidActionSpace({}, {}, thickness={})".format(self.low, self.high, self.thickness)
+
+
+    
 class CoverageEnv(gym.Env):
     def __init__(self, mesh_folder='/home/dir/RL_CoveragePlanning/test_models/modified',
                   sensor_range=50, fov_deg=60, width_px=320, height_px=240, 
                   coverage_req=0.95,
                   render_mode='rgb_array', 
-                  train = False,
+                  train = True,
                   save_action_history=True, 
                   save_path = '/home/dir/RL_CoveragePlanning/action'
                 ):
@@ -32,7 +57,6 @@ class CoverageEnv(gym.Env):
         print(f"Mesh file: {self.mesh_file_name} loaded for environment...")
 
         self.mesh = o3d.io.read_triangle_mesh(self.mesh_file)
-        # self.mesh.scale(0.01, center=self.mesh.get_center())
         self.mesh.translate(-self.mesh.get_center())
         
         self.mesh = o3d.t.geometry.TriangleMesh.from_legacy(self.mesh)
@@ -148,6 +172,10 @@ class CoverageEnv(gym.Env):
 
     def get_reward(self):
         # Subtract observation history from the current observation space
+        w = [-10, # penalize for each action
+             100, # reward for new coverage
+             100] # reward for spreading the actions
+
         past_history = self.observation_history-self.observation_space
         xor_result = np.logical_xor(past_history, self.observation_history)
         new_covered = (np.sum(xor_result) / self.observation_space.shape[0])*100
@@ -155,8 +183,8 @@ class CoverageEnv(gym.Env):
         mean_action = np.mean(self.action_history, axis=0)
         # find disance of mean from the center of the mesh
         distance = np.linalg.norm(mean_action)
-        reward = (-10*len(self.action_history)) + (new_covered*100) + ((1/distance)*100)
-        reward = (new_covered*10) 
+        # reward = (w[0]*len(self.action_history)) + (new_covered*w[1]) + ((1/distance)*w[2])
+        reward = (w[0]*len(self.action_history)) + (new_covered*w[1]) 
         # print(f"Reward: {reward}")
         return reward
     

@@ -8,3 +8,5 @@ viewpointWorld_v0.egg-info/top_level.txt
 viewpoint_env/__init__.py
 viewpoint_env/viewpointWorld.py
 viewpoint_env/viewpointWorld_old.py
+viewpoint_env/viewpointWorld_v0.py
+viewpoint_env/viewpointWorld_v1.py
