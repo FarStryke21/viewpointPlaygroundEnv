@@ -19,6 +19,7 @@ import sys
 import os
 import cv2
 from datetime import datetime
+
 sys.path.append("/home/dir/RL_CoveragePlanning/viewpointPlaygroundEnv/viewpoint_env")
 from viewpointWorld import CoverageEnv
 
@@ -27,9 +28,21 @@ register(
     entry_point="viewpoint_env.viewpointWorld:CoverageEnv",
 )
 
-env = CoverageEnv()
+env = CoverageEnv(train=False)
 
-def visualize_viewpoint(mesh, observation, history):
+def calculate_rotation_matrix(position_array, look_at_array):    
+    direction_vector = look_at_array - position_array
+    direction_vector /= np.linalg.norm(direction_vector)
+
+    up_vector = np.array([0, 1, 0])
+    right_vector = np.cross(direction_vector, up_vector)
+    right_vector /= np.linalg.norm(right_vector)
+    up_vector = np.cross(direction_vector, right_vector)
+
+    rotation_matrix = np.column_stack((right_vector, up_vector, direction_vector))
+    return rotation_matrix
+
+def visualize_viewpoint(mesh, observation, history, actions):
     # Convert legacy TriangleMesh to tensor-based TriangleMesh
     t_mesh = mesh
     
@@ -40,28 +53,38 @@ def visualize_viewpoint(mesh, observation, history):
     
     # Assign colors to the mesh
     t_mesh.triangle.colors = o3d.core.Tensor(colors)
-    
-    o3d.visualization.draw([t_mesh])
+
+    display = [t_mesh]
+    for i, action in enumerate(actions):
+        size = 5 if i == len(actions)-1 else 3
+        frame = o3d.t.geometry.TriangleMesh.create_coordinate_frame(size = size, origin = action)
+        R = calculate_rotation_matrix(action, np.array([0,0,0]))
+        R = o3d.core.Tensor(R, dtype=o3d.core.Dtype.Float32)
+        frame.rotate(R, center=action)
+        
+        display.append(copy.deepcopy(frame))
+    o3d.visualization.draw(display)
 
 obs, _ = env.reset()  # Reset the environment
 done = False
 total_reward = 0
 mesh = env.mesh
 i = 0
+action_history = []
 while not done:
     # Select a random action
     action = env.action_space.sample()
     
     # Step the environment with the selected action
     obs, reward, done, _, _ = env.step(action)
-    
+
     # Accumulate total reward
     total_reward += reward
     
-    visualize_viewpoint(mesh, obs, env.observation_history-obs)
-    print(f"Iteration: {i:3} | Reward; {reward:10.2f} | Total Reward: {total_reward:10.2f}")
+    visualize_viewpoint(mesh, obs, env.observation_history-obs, env.action_history)
+    print(f"Iteration: {i:3} | Coverage; {env.percentage_covered:.2%} | Total Reward: {total_reward:10.2f}")
     i = i + 1
-    if i == 10: break
+    # if i == 10: break
     # Render the environment
     # env.render()
 

@@ -8,8 +8,8 @@ import matplotlib.pyplot as plt
 
 class CoverageEnv(gym.Env):
     def __init__(self, mesh_folder='/home/dir/RL_CoveragePlanning/test_models/modified',
-                  sensor_range=50, fov_deg=60, width_px=320, height_px=240, 
-                  coverage_req=0.95,
+                  sensor_range=50, fov_deg=60, width_px=640, height_px=480, 
+                  coverage_req=0.90,
                   render_mode='rgb_array', 
                   train = False,
                   save_action_history=True, 
@@ -26,7 +26,7 @@ class CoverageEnv(gym.Env):
             self.mesh_file_name = self.get_mesh_file(mesh_folder)
             self.mesh_file = os.path.join(mesh_folder, self.mesh_file_name)
         else:
-            self.mesh_file_name = 'test_7.obj'
+            self.mesh_file_name = 'test_6.obj'
             self.mesh_file = os.path.join(mesh_folder, self.mesh_file_name)
 
         print(f"Mesh file: {self.mesh_file_name} loaded for environment...")
@@ -51,12 +51,7 @@ class CoverageEnv(gym.Env):
 
         self.sensor_range = sensor_range
         self.bbox = self.mesh.get_axis_aligned_bounding_box()
-        low = self.bbox.min_bound.numpy()
-        high = self.bbox.max_bound.numpy()
 
-        # print(f"Low: {low} | High: {high}")
-
-        # self.action_space = HollowCuboidActionSpace(low, high, self.sensor_range)
         self.action_space = spaces.Box(low=-np.pi, high=np.pi, shape=(2,), dtype=np.float32)
 
         self.INVALID_ID = 4294967295
@@ -134,16 +129,18 @@ class CoverageEnv(gym.Env):
     
     def process_observation(self, tracker):
         primitive_ids = tracker['primitive_ids'].numpy()
+
         # Reshape primitive_ids to a 1D array
         primitive_ids = primitive_ids.reshape(-1)
+
         # Remove all the invalid IDs
-        primitive_ids = primitive_ids[primitive_ids != self.INVALID_ID]
-        primitive_ids = np.unique(primitive_ids)
+        primitive_ids = np.unique(primitive_ids[primitive_ids != self.INVALID_ID])
         
         # Create a zero array of size num_triangles
         observation = np.zeros(self.num_triangles)
         # Set the elements in observation to 1 where the primitive_ids are present
         observation[primitive_ids] = 1
+        
         return observation
 
     def get_reward(self):
