@@ -6,7 +6,10 @@ viewpointWorld_v0.egg-info/dependency_links.txt
 viewpointWorld_v0.egg-info/requires.txt
 viewpointWorld_v0.egg-info/top_level.txt
 viewpoint_env/__init__.py
+viewpoint_env/coverageAgentPolicy.py
 viewpoint_env/viewpointWorld.py
 viewpoint_env/viewpointWorld_old.py
 viewpoint_env/viewpointWorld_v0.py
 viewpoint_env/viewpointWorld_v1.py
+viewpoint_env/viewpointWorld_v2.py
+viewpoint_env/viewpointWorld_v3.py
