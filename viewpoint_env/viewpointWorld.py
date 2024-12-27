@@ -8,6 +8,41 @@ from gymnasium import spaces
 import torch
 import open3d as o3d
 
+from numba import jit
+
+@jit(nopython=True)
+def process_observation(primitive_ids, num_triangles, invalid_id):
+    observation = np.zeros(num_triangles)
+    for id in primitive_ids:
+        if id != invalid_id:
+            observation[id] = 1
+    return observation
+
+@jit(nopython=True)
+def jit_calculate_intrinsic_reward(last_observation, observation_history, num_triangles):
+    observation_change = np.sum(np.logical_and(last_observation, np.logical_not(observation_history)))
+    normalized_change = observation_change / num_triangles
+    total_observed = np.sum(observation_history)
+    novelty = 1 / (np.sqrt(total_observed) + 1)
+    return (normalized_change + novelty) / 2
+
+@jit(nopython=True)
+def jit_get_pose(action, sensor_range):
+    theta, phi = action[0], action[1]
+    x = sensor_range * np.sin(phi) * np.cos(theta)
+    y = sensor_range * np.sin(phi) * np.sin(theta)
+    z = sensor_range * np.cos(phi)
+    return np.array([x, y, z])
+
+@jit(nopython=True)
+def jit_get_reward(newly_covered, coverage, done_val, action_history_length, intrinsic_reward, reward_weights):
+    r = np.array([
+        np.sum(newly_covered),
+        1 if coverage >= done_val else 0,
+        action_history_length,
+        intrinsic_reward
+    ])
+    return np.dot(reward_weights, r)
 
 class CoverageEnv(gym.Env):
     """
@@ -18,7 +53,7 @@ class CoverageEnv(gym.Env):
     """
 
     def __init__(self, mesh_folder='/home/dir/RL_CoveragePlanning/test_models/modified',
-                  sensor_range=50, fov_deg=60, width_px=640, height_px=480, 
+                  sensor_range=25, fov_deg=60, width_px=640, height_px=480, 
                   coverage_req=0.90,
                   render_mode='rgb_array', 
                   train = True,
@@ -42,11 +77,13 @@ class CoverageEnv(gym.Env):
 
         super(CoverageEnv, self).__init__()
 
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  
+        
         self.save_action_history = save_action_history
         self.save_path = save_path
 
         # Load mesh file
-        self.mesh_file_name = self._get_mesh_file(mesh_folder) if train else 'test_6.obj'
+        self.mesh_file_name = self._get_mesh_file(mesh_folder) if train else 'test_8.obj'
         self.mesh_file = os.path.join(mesh_folder, self.mesh_file_name)
         print(f"Mesh file: {self.mesh_file_name} loaded for environment...")
 
@@ -186,14 +223,7 @@ class CoverageEnv(gym.Env):
         Returns:
             np.ndarray: Pose from the action.
         """
-        # Modify action here
-        theta, phi = action[0], action[1]
-        x = self.sensor_range * np.sin(phi) * np.cos(theta)
-        y = self.sensor_range * np.sin(phi) * np.sin(theta)
-        z = self.sensor_range * np.cos(phi)
-
-        modified_action = np.array([x, y, z])
-        return modified_action
+        return jit_get_pose(action, self.sensor_range)
     
     def _get_observation(self, pose):
         """
@@ -225,21 +255,8 @@ class CoverageEnv(gym.Env):
         Returns:
             np.ndarray: Processed observation.
         """
-        # Get the primitive IDs from the tracker
-        primitive_ids = tracker['primitive_ids'].numpy()
-
-        # Reshape primitive_ids to a 1D array
-        primitive_ids = primitive_ids.reshape(-1)
-
-        # Remove all the invalid IDs
-        primitive_ids = np.unique(primitive_ids[primitive_ids != self.INVALID_ID])
-        
-        # Create a zero array of size num_triangles
-        observation = np.zeros(self.num_triangles)
-        # Set the elements in observation to 1 where the primitive_ids are present
-        observation[primitive_ids] = 1
-        
-        return observation
+        primitive_ids = tracker['primitive_ids'].numpy().reshape(-1)
+        return process_observation(primitive_ids, self.num_triangles, self.INVALID_ID)
 
     def _calculate_intrinsic_reward(self):
         """
@@ -248,20 +265,7 @@ class CoverageEnv(gym.Env):
         Returns:
             float: Intrinsic reward value.
         """
-        # Calculate the change in observation since the last step
-        observation_change = np.sum(np.logical_and(self.last_observation, np.logical_not(self.observation_history)))
-        
-        # Normalize the change by the total number of triangles
-        normalized_change = observation_change / self.num_triangles
-        
-        # Calculate the novelty of the current state
-        total_observed = np.sum(self.observation_history)
-        novelty = 1 / (np.sqrt(total_observed) + 1)
-        
-        # Combine the normalized change and novelty
-        intrinsic_reward = (normalized_change + novelty) / 2
-        
-        return intrinsic_reward
+        return jit_calculate_intrinsic_reward(self.last_observation, self.observation_history, self.num_triangles)
 
 
     def get_reward(self, newly_covered, coverage):
@@ -275,13 +279,8 @@ class CoverageEnv(gym.Env):
         Returns:
             float: Reward from the newly covered faces and coverage.
         """
-        r = np.array([
-            np.sum(newly_covered),
-            1 if coverage >= self.done_val else 0,
-            len(self.action_history),
-            self._calculate_intrinsic_reward()
-        ])
-        return np.dot(self.reward_weights, r)
+        intrinsic_reward = self._calculate_intrinsic_reward()
+        return jit_get_reward(newly_covered, coverage, self.done_val, len(self.action_history), intrinsic_reward, self.reward_weights)
 
     
     def render(self):
@@ -307,3 +306,4 @@ class CoverageEnv(gym.Env):
             np.savetxt(self.pose_path, np.unique(self.action_history, axis=0), delimiter=",")
             print("Percentage covered: ", (self.percentage_covered*100))
             print(f"Number of actions: {len(self.action_history)}")
+
