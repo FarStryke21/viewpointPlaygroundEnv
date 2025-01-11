@@ -54,7 +54,7 @@ class CoverageEnv(gym.Env):
 
     def __init__(self, mesh_folder='/home/dir/RL_CoveragePlanning/test_models/modified',
                   sensor_range=25, fov_deg=60, width_px=640, height_px=480, 
-                  coverage_req=0.90,
+                  coverage_req=0.95,
                   render_mode='rgb_array', 
                   train = True,
                   save_action_history=True, 
@@ -78,14 +78,14 @@ class CoverageEnv(gym.Env):
         super(CoverageEnv, self).__init__()
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  
-        
+        self._train = train
         self.save_action_history = save_action_history
         self.save_path = save_path
 
         # Load mesh file
-        self.mesh_file_name = self._get_mesh_file(mesh_folder) if train else 'test_8.obj'
+        self.mesh_file_name = self._get_mesh_file(mesh_folder) if train else 'test_0.obj'
         self.mesh_file = os.path.join(mesh_folder, self.mesh_file_name)
-        print(f"Mesh file: {self.mesh_file_name} loaded for environment...")
+        print(f"Mesh file: {self.mesh_file_name} loaded for environment... | Coverage Req: {coverage_req*100:4.2f}%")
 
         # Set up the mesh and scene
         self.mesh = o3d.io.read_triangle_mesh(self.mesh_file)
@@ -126,7 +126,13 @@ class CoverageEnv(gym.Env):
             -1.0,                   # w_step_penalty
             10                      # w_intrinsic_reward
         ])
-
+        # self.reward_weights = np.array([
+        #     100.0,                    # w_newly_covered
+        #     100.0,                   # w_threshold_bonus
+        #     -10.0,                   # w_step_penalty
+        #     100                      # w_intrinsic_reward
+        # ])
+        print("Reward weights: ", self.reward_weights)
         
 
     def reset(self, seed=None, options=None):
@@ -182,7 +188,7 @@ class CoverageEnv(gym.Env):
         reward = self.get_reward(newly_covered, self.percentage_covered)
         terminated = self.percentage_covered >= self.done_val
         truncated = False
-
+        if terminated and not self._train: print(f"File: {self.mesh_file_name} | Viewpoints: {len(self.action_history)} | Coverage reached: {self.percentage_covered*100:4.2f}%")
         return self._get_obs(), reward, terminated, truncated, {}
     
     def _get_obs(self):

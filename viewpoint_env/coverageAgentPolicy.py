@@ -8,7 +8,7 @@ from typing import Callable, Dict, Tuple
 
 # Custom Feature Extractor
 class CoverageAgentFeatureExtractor(BaseFeaturesExtractor):
-    def __init__(self, observation_space: spaces.Dict, latent_dim: int = 128):
+    def __init__(self, observation_space: spaces.Dict, latent_dim: int = 256):
         super().__init__(observation_space, features_dim=latent_dim)
         
         # Extract dimensions from observation space
